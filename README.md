@@ -2,6 +2,8 @@
 
 This bot handles voice messages and forwarded messages in Telegram groups. Voice messages are transcribed using OpenAI Whisper. Forwarded messages are summarized in Hebrew using GPT-4.
 
+When a forwarded message arrives, the bot deletes the forwarded copy and posts a new message containing the Hebrew summary. The new message mentions the user who forwarded it and, when possible, links back to the original message.
+
 ## Configuration
 
 Copy `.env.example` to `.env` and fill in the `BOT_TOKEN`, `OPENAI_API_KEY` and `ERROR_CHANNEL_ID` values. The application uses [dotenv](https://github.com/motdotla/dotenv) to automatically load these variables at startup.
