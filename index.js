@@ -1,6 +1,7 @@
 const TelegramBot = require('node-telegram-bot-api');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { OpenAI } = require('openai');
 
 const token = process.env.BOT_TOKEN;
@@ -14,6 +15,29 @@ if (!token || !openaiKey || !errorChannelId) {
 
 const bot = new TelegramBot(token, { polling: true });
 const openai = new OpenAI({ apiKey: openaiKey });
+
+// Load persisted map of processed forwarded messages per chat.
+// Structure: Map<chatId, Map<dedupKey, firstMessageId>>
+const dedupFilePath = path.join(__dirname, 'forward_dedup.json');
+const dedupStore = new Map();
+
+try {
+  const data = JSON.parse(fs.readFileSync(dedupFilePath, 'utf8'));
+  for (const [chatId, keys] of Object.entries(data)) {
+    const inner = new Map(Object.entries(keys));
+    dedupStore.set(chatId, inner);
+  }
+} catch (e) {
+  // No existing file or corrupted content - start fresh
+}
+
+function saveDedup() {
+  const obj = {};
+  for (const [chatId, map] of dedupStore) {
+    obj[chatId] = Object.fromEntries(map);
+  }
+  fs.writeFileSync(dedupFilePath, JSON.stringify(obj));
+}
 
 bot.on('message', async (msg) => {
   if (!msg.chat || (msg.chat.type !== 'group' && msg.chat.type !== 'supergroup')) {
@@ -49,6 +73,34 @@ async function handleForward(msg) {
   const text = msg.text || msg.caption || '';
   if (!text.trim()) return;
 
+  // Build a key for deduplication using the original forward identifiers when available
+  let key;
+  if (msg.forward_from_chat && msg.forward_from_message_id) {
+    key = `${msg.forward_from_chat.id}:${msg.forward_from_message_id}`;
+  } else {
+    key = crypto.createHash('sha256').update(text).digest('hex');
+  }
+
+  const chatKey = String(msg.chat.id);
+  let map = dedupStore.get(chatKey);
+  if (!map) {
+    map = new Map();
+    dedupStore.set(chatKey, map);
+  }
+
+  if (map.has(key)) {
+    const firstId = map.get(key);
+    // Create link to original message using channel-style link
+    const chatLinkId = String(msg.chat.id).startsWith('-100')
+      ? String(msg.chat.id).slice(4)
+      : String(msg.chat.id).replace('-', '');
+    const link = `https://t.me/c/${chatLinkId}/${firstId}`;
+    const mention = msg.from.username ? `@${msg.from.username}` : `[${msg.from.first_name}](tg://user?id=${msg.from.id})`;
+    await bot.deleteMessage(msg.chat.id, msg.message_id);
+    await bot.sendMessage(msg.chat.id, `${mention} ההודעה כבר הועברה בעבר: ${link}`, { parse_mode: 'Markdown' });
+    return;
+  }
+
   const prompt = `Analyze the following message. If it is not mostly in Hebrew or English, first translate it to Hebrew. Then provide a short summary in Hebrew, removing credit tags, links or requests to follow or reply.\n\nMessage:\n${text}`;
 
   const result = await openai.chat.completions.create({
@@ -58,6 +110,9 @@ async function handleForward(msg) {
 
   const summary = result.choices[0].message.content.trim();
   await bot.sendMessage(msg.chat.id, summary, { reply_to_message_id: msg.message_id });
+
+  map.set(key, msg.message_id);
+  saveDedup();
 }
 
 async function reportError(error, msg) {
