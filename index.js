@@ -4,6 +4,9 @@ const path = require('path');
 const crypto = require('crypto');
 const { OpenAI } = require('openai');
 
+// Load environment variables from .env if present
+require('dotenv').config();
+
 const token = process.env.BOT_TOKEN;
 const openaiKey = process.env.OPENAI_API_KEY;
 const errorChannelId = process.env.ERROR_CHANNEL_ID;
