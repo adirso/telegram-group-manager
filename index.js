@@ -125,9 +125,32 @@ async function handleForward(msg) {
   });
 
   const summary = result.choices[0].message.content.trim();
-  await bot.sendMessage(msg.chat.id, summary, { reply_to_message_id: msg.message_id });
 
-  map.set(key, msg.message_id);
+  const mention = msg.from.username
+    ? `@${msg.from.username}`
+    : `[${msg.from.first_name}](tg://user?id=${msg.from.id})`;
+
+  let sourceLink = '';
+  if (msg.forward_from_chat && msg.forward_from_message_id) {
+    if (msg.forward_from_chat.username) {
+      sourceLink = `https://t.me/${msg.forward_from_chat.username}/${msg.forward_from_message_id}`;
+    } else {
+      const origId = String(msg.forward_from_chat.id).startsWith('-100')
+        ? String(msg.forward_from_chat.id).slice(4)
+        : String(msg.forward_from_chat.id).replace('-', '');
+      sourceLink = `https://t.me/c/${origId}/${msg.forward_from_message_id}`;
+    }
+  }
+
+  let finalText = `${summary}\n\nהועבר על ידי ${mention}`;
+  if (sourceLink) {
+    finalText += `\nקישור למקור: ${sourceLink}`;
+  }
+
+  await bot.deleteMessage(msg.chat.id, msg.message_id);
+  const sent = await bot.sendMessage(msg.chat.id, finalText, { parse_mode: 'Markdown' });
+
+  map.set(key, sent.message_id);
   saveDedup();
 }
 
