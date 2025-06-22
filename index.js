@@ -42,6 +42,13 @@ function saveDedup() {
   fs.writeFileSync(dedupFilePath, JSON.stringify(obj));
 }
 
+function escapeHtml(text) {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 bot.on('message', async (msg) => {
   if (!msg.chat || (msg.chat.type !== 'group' && msg.chat.type !== 'supergroup')) {
     return;
@@ -98,9 +105,15 @@ async function handleForward(msg) {
       ? String(msg.chat.id).slice(4)
       : String(msg.chat.id).replace('-', '');
     const link = `https://t.me/c/${chatLinkId}/${firstId}`;
-    const mention = msg.from.username ? `@${msg.from.username}` : `[${msg.from.first_name}](tg://user?id=${msg.from.id})`;
+    const mention = msg.from.username
+      ? `@${msg.from.username}`
+      : `<a href="tg://user?id=${msg.from.id}">${escapeHtml(msg.from.first_name)}</a>`;
     await bot.deleteMessage(msg.chat.id, msg.message_id);
-    await bot.sendMessage(msg.chat.id, `${mention} ההודעה כבר הועברה בעבר: ${link}`, { parse_mode: 'Markdown' });
+    await bot.sendMessage(
+      msg.chat.id,
+      `${mention} ההודעה כבר הועברה בעבר: <a href="${link}">${link}</a>`,
+      { parse_mode: 'HTML' }
+    );
     return;
   }
 
